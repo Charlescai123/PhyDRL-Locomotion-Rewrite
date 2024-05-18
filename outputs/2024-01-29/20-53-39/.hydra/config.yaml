@@ -1,0 +1,9 @@
+robot:
+  _target_: null
+  vx: 0.2
+  vy: 0.0
+  wz: 0.0
+  safe_height: 0.12
+  mpc_body_height: 0.24
+  mpc_body_mass: 108 / 9.8
+  mpc_body_inertia: np.array([0.068, 0., 0., 0., 0.228, 0., 0., 0., 0.256])

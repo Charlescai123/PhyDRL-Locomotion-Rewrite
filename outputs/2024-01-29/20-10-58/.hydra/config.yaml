@@ -1,0 +1,18 @@
+robots:
+  gait_scheduler:
+    pi: 3.141592653589793
+    gait_scheduler:
+      _target_: locomotion.gait_generator.offset_gait_generator.OffsetGaitGenerator
+      init_phase:
+      - 0.0
+      - 0.0
+      - 0.0
+      - 0.0
+      gait_parameters:
+      - 2.0
+      - 3.141592653589793
+      - 3.141592653589793
+      - 0
+      - 0.4
+      early_touchdown_phase_threshold: 0.5
+      lose_contact_phase_threshold: 0.1

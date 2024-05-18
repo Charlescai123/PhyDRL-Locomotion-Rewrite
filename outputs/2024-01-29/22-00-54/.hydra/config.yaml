@@ -1,0 +1,377 @@
+robot:
+  pi: 3.141592653589793
+  gait_scheduler:
+    _target_: locomotion.gait_generator.offset_gait_scheduler.OffsetGaitScheduler
+    init_phase:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    gait_parameters:
+    - 2.0
+    - 3.141592653589793
+    - 3.141592653589793
+    - 0
+    - 0.4
+    early_touchdown_phase_threshold: 0.5
+    lose_contact_phase_threshold: 0.1
+  models:
+    _target_: null
+    c1:
+    - 0
+    - 0.9
+    - -1.8
+    - 0
+    - 0.9
+    - -1.8
+    - 0
+    - 0.9
+    - -1.8
+    - 0
+    - 0.9
+    - -1.8
+    c2:
+    - -0.275
+    - 1.091
+    - -2.7
+    - 0.31914
+    - 1.081
+    - -2.72
+    - -0.299
+    - 1.0584
+    - -2.675
+    - 0.28307
+    - 1.083
+    - -2.685
+    urdf_path: a1.urdf
+    base_joint_names: null
+    foot_joint_names:
+    - FR_toe_fixed
+    - FL_toe_fixed
+    - RR_toe_fixed
+    - RL_toe_fixed
+    time_step: 0.002
+    action_repeat: 1
+    reset_time: 0
+    num_solver_iterations: 30
+    enable_cone_friction: 0
+    on_rack: false
+    init_rack_position:
+    - 0
+    - 0
+    - 1
+    init_position:
+    - 0
+    - 0
+    - 0.26
+    sync_gui: true
+    camera_fixed: false
+    motor_control_mode: hybrid
+    motor_init_position:
+    - 0
+    - 0.9
+    - -1.8
+    - 0
+    - 0.9
+    - -1.8
+    - 0
+    - 0.9
+    - -1.8
+    - 0
+    - 0.9
+    - -1.8
+    motor_init_target_position:
+    - 0
+    - 0.9
+    - -1.8
+    - 0
+    - 0.9
+    - -1.8
+    - 0
+    - 0.9
+    - -1.8
+    - 0
+    - 0.9
+    - -1.8
+    swing_reference_positions:
+    - - 0.17
+      - -0.135
+      - 0
+    - - 0.17
+      - 0.13
+      - 0
+    - - -0.195
+      - -0.135
+      - 0
+    - - -0.195
+      - 0.13
+      - 0
+    window_size: 20
+    ground_normal_window_size: 10
+  motors:
+    position_control: 0
+    torque_control: 1
+    hybrid_control: 2
+    motor_group:
+      _target_: locomotion.robot.motors.MotorGroup
+      gen_by_yaml: true
+      motors:
+      - _target_: locomotion.robot.motors.MotorModel
+        name: FR_hip_joint
+        motor_control_mode: 0
+        init_position: 0.0
+        min_position: -0.802851455917
+        max_position: 0.802851455917
+        min_velocity: -16
+        max_velocity: 16
+        min_torque: -33.5
+        max_torque: 33.5
+        kp: 100
+        kd: 1
+      - _target_: locomotion.robot.motors.MotorModel
+        name: FR_upper_joint
+        motor_control_mode: 0
+        init_position: 0.9
+        min_position: -1.0471975512
+        max_position: 4.18879020479
+        min_velocity: -16
+        max_velocity: 16
+        min_torque: -33.5
+        max_torque: 33.5
+        kp: 100
+        kd: 2
+      - _target_: locomotion.robot.motors.MotorModel
+        name: FR_lower_joint
+        motor_control_mode: 0
+        init_position: -1.8
+        min_position: -2.6965336943
+        max_position: -0.916297857297
+        min_velocity: -16
+        max_velocity: 16
+        min_torque: -33.5
+        max_torque: 33.5
+        kp: 100
+        kd: 2
+      - _target_: locomotion.robot.motors.MotorModel
+        name: FL_hip_joint
+        motor_control_mode: 0
+        init_position: 0.0
+        min_position: -0.802851455917
+        max_position: 0.802851455917
+        min_velocity: -16
+        max_velocity: 16
+        min_torque: -33.5
+        max_torque: 33.5
+        kp: 100
+        kd: 1
+      - _target_: locomotion.robot.motors.MotorModel
+        name: FL_upper_joint
+        motor_control_mode: 0
+        init_position: 0.9
+        min_position: -1.0471975512
+        max_position: 4.18879020479
+        min_velocity: -16
+        max_velocity: 16
+        min_torque: -33.5
+        max_torque: 33.5
+        kp: 100
+        kd: 2
+      - _target_: locomotion.robot.motors.MotorModel
+        name: FL_lower_joint
+        motor_control_mode: 0
+        init_position: -1.8
+        min_position: -2.6965336943
+        max_position: -0.916297857297
+        min_velocity: -16
+        max_velocity: 16
+        min_torque: -33.5
+        max_torque: 33.5
+        kp: 100
+        kd: 2
+      - _target_: locomotion.robot.motors.MotorModel
+        name: RR_hip_joint
+        motor_control_mode: 0
+        init_position: 0.0
+        min_position: -0.802851455917
+        max_position: 0.802851455917
+        min_velocity: -16
+        max_velocity: 16
+        min_torque: -33.5
+        max_torque: 33.5
+        kp: 100
+        kd: 1
+      - _target_: locomotion.robot.motors.MotorModel
+        name: RR_upper_joint
+        motor_control_mode: 0
+        init_position: 0.9
+        min_position: -1.0471975512
+        max_position: 4.18879020479
+        min_velocity: -16
+        max_velocity: 16
+        min_torque: -33.5
+        max_torque: 33.5
+        kp: 100
+        kd: 2
+      - _target_: locomotion.robot.motors.MotorModel
+        name: RR_lower_joint
+        motor_control_mode: 0
+        init_position: -1.8
+        min_position: -2.6965336943
+        max_position: -0.916297857297
+        min_velocity: -16
+        max_velocity: 16
+        min_torque: -33.5
+        max_torque: 33.5
+        kp: 100
+        kd: 2
+      - _target_: locomotion.robot.motors.MotorModel
+        name: RL_hip_joint
+        motor_control_mode: 0
+        init_position: 0.0
+        min_position: -0.802851455917
+        max_position: 0.802851455917
+        min_velocity: -16
+        max_velocity: 16
+        min_torque: -33.5
+        max_torque: 33.5
+        kp: 100
+        kd: 1
+      - _target_: locomotion.robot.motors.MotorModel
+        name: RL_upper_joint
+        motor_control_mode: 0
+        init_position: 0.9
+        min_position: -1.0471975512
+        max_position: 4.18879020479
+        min_velocity: -16
+        max_velocity: 16
+        min_torque: -33.5
+        max_torque: 33.5
+        kp: 100
+        kd: 2
+      - _target_: locomotion.robot.motors.MotorModel
+        name: RL_lower_joint
+        motor_control_mode: 0
+        init_position: -1.8
+        min_position: -2.6965336943
+        max_position: -0.916297857297
+        min_velocity: -16
+        max_velocity: 16
+        min_torque: -33.5
+        max_torque: 33.5
+        kp: 100
+        kd: 2
+  mpc_controller:
+    stance_leg:
+      stance:
+        _target_: locomotion.mpc_controller.stance_leg_controller_quadprog
+        qp_kp:
+        - 0.0
+        - 0.0
+        - 100.0
+        - 100.0
+        - 100.0
+        - 0.0
+        qp_kd:
+        - 40.0
+        - 30.0
+        - 10.0
+        - 10.0
+        - 10.0
+        - 30.0
+        ddq_scaler: 1.0
+        ddq_limit:
+        - 10.0
+        - 10.0
+        - 10.0
+        - 20.0
+        - 20.0
+        - 20.0
+        friction_coeff: 0.45
+        reg_weight: 0.0001
+        mpc_weight:
+        - 1.0
+        - 1.0
+        - 0
+        - 0
+        - 0
+        - 10
+        - 0.0
+        - 0.0
+        - 0.1
+        - 0.1
+        - 0.1
+        - 0.0
+        - 0
+        acc_weight:
+        - 1
+        - 1
+        - 1
+        - 10
+        - 10
+        - 1
+        planning_horizon: 10
+        planning_timestep: 0.025
+    swing_leg:
+      _target_: locomotion.mpc_controller.swing_leg_controller
+      foot_lift_height: 0.1
+      foot_landing_clearance: 0.01
+      raibert_scalar: 3
+      raibert_kp:
+      - 0.01
+      - 0.01
+      - 0.01
+      foot_placement_interval:
+      - 0.15
+      - 0.1
+      - 0.05
+      use_raibert_heuristic: true
+phydrl:
+  ddpg:
+    _target_: phydrl.M
+    action_noise: 'no'
+    action_noise_factor: 1
+    action_noise_half_decay_time: 1000000.0
+    soft_alpha: 0.005
+    learning_rate_actor: 0.0003
+    learning_rate_critic: 0.0003
+    batch_size: 300
+    add_target_action_noise: true
+    gamma_discount: 0.1
+    model_path: null
+    training_episode: 1000000.0
+    max_episode_steps: 10200
+    experience_prefill_size: 300
+    mode: train
+    action_mode: residual
+    use_taylor_nn: false
+    taylor_editing: false
+    replay_buffer_size: 51000
+  envs:
+    if_add_terrain: false
+    random_reset_eval: false
+    random_reset_train: false
+    if_record_video: false
+    action_magnitude: 1
+    fall_threshold: 0.12
+    self.friction: 0.99
+  logger:
+    _target_: null
+    evaluation_period: 20
+    model_name: drl
+    visualize_eval: false
+    force_override: false
+    mode: train
+  taylor:
+    _target_: null
+    dense_dims:
+    - 10
+    - 10
+    aug_order:
+    - 1
+    - 1
+    - 0
+    initializer_w: tn
+    initializer_b: uniform
+    activations:
+    - relu
+    - relu

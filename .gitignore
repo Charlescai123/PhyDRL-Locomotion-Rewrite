@@ -1,0 +1,10 @@
+.idea/
+build/
+debug/
+dist/
+saved/
+example_checkpoint/
+unit_test/
+robot_interface.*
+*.egg-info
+**/__pycache__/

@@ -1,0 +1,132 @@
+robot:
+  pi: 3.141592653589793
+  gait_scheduler:
+    _target_: locomotion.gait_generator.offset_gait_scheduler.OffsetGaitScheduler
+    init_phase:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    gait_parameters:
+    - 2.0
+    - 3.141592653589793
+    - 3.141592653589793
+    - 0
+    - 0.4
+    early_touchdown_phase_threshold: 0.5
+    lose_contact_phase_threshold: 0.1
+  mpc_controller:
+    stance_leg:
+      stance:
+        _target_: locomotion.mpc_controller.stance_leg_controller_quadprog
+        qp_kp:
+        - 0.0
+        - 0.0
+        - 100.0
+        - 100.0
+        - 100.0
+        - 0.0
+        qp_kd:
+        - 40.0
+        - 30.0
+        - 10.0
+        - 10.0
+        - 10.0
+        - 30.0
+        ddq_scaler: 1.0
+        ddq_limit:
+        - 10.0
+        - 10.0
+        - 10.0
+        - 20.0
+        - 20.0
+        - 20.0
+        friction_coeff: 0.45
+        reg_weight: 0.0001
+        mpc_weight:
+        - 1.0
+        - 1.0
+        - 0
+        - 0
+        - 0
+        - 10
+        - 0.0
+        - 0.0
+        - 0.1
+        - 0.1
+        - 0.1
+        - 0.0
+        - 0
+        acc_weight:
+        - 1
+        - 1
+        - 1
+        - 10
+        - 10
+        - 1
+        planning_horizon: 10
+        planning_timestep: 0.025
+    swing_leg:
+      _target_: locomotion.mpc_controller.swing_leg_controller
+      foot_lift_height: 0.1
+      foot_landing_clearance: 0.01
+      raibert_scalar: 3
+      raibert_kp:
+      - 0.01
+      - 0.01
+      - 0.01
+      foot_placement_interval:
+      - 0.15
+      - 0.1
+      - 0.05
+      use_raibert_heuristic: true
+phy-drl:
+  ddpg:
+    _target_: phydrl.M
+    action_noise: 'no'
+    action_noise_factor: 1
+    action_noise_half_decay_time: 1000000.0
+    soft_alpha: 0.005
+    learning_rate_actor: 0.0003
+    learning_rate_critic: 0.0003
+    batch_size: 300
+    add_target_action_noise: true
+    gamma_discount: 0.1
+    model_path: null
+    training_episode: 1000000.0
+    max_episode_steps: 10200
+    experience_prefill_size: 300
+    mode: train
+    action_mode: residual
+    use_taylor_nn: false
+    taylor_editing: false
+    replay_buffer_size: 51000
+  envs:
+    if_add_terrain: false
+    random_reset_eval: false
+    random_reset_train: false
+    if_record_video: false
+    action_magnitude: 1
+    fall_threshold: 0.12
+    self.friction: 0.99
+  logger:
+    _target_: null
+    evaluation_period: 20
+    model_name: drl
+    visualize_eval: false
+    force_override: false
+    mode: train
+  taylor:
+    _target_: null
+    dense_dims:
+    - 10
+    - 10
+    aug_order:
+    - 1
+    - 1
+    - 0
+    initializer_w: tn
+    initializer_b: uniform
+    activations:
+    - relu
+    - relu
