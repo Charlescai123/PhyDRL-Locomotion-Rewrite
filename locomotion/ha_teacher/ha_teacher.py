@@ -185,12 +185,12 @@ class HATeacher:
 
         # Get action
         if self._last_action_mode == HACActionMode.PHYDRL:
-            action, qp_sol = self._robot.controller.get_action(phydrl=True)
-            return action, qp_sol
+            action, qp_sol, drl_nominal_ddq, _ = self._robot.controller.get_action(phydrl=True)
+            return action, qp_sol, drl_nominal_ddq
 
         elif self._last_action_mode == HACActionMode.MPC:
-            action, qp_sol = self._robot.controller.get_action(phydrl=False)
-            return action, qp_sol
+            action, qp_sol, drl_nominal_ddq, _ = self._robot.controller.get_action(phydrl=False)
+            return action, qp_sol, drl_nominal_ddq
 
         elif self._last_action_mode == HACActionMode.SIMPLEX:
             # Swing action
@@ -207,13 +207,15 @@ class HATeacher:
             print(f"F_kd is: {F_kd}")
             print(f"LMI time duration: {e - s}")
             state_trig = np.frombuffer(self._state_trig, dtype=np.float64).reshape(12, 1)
-            stance_action, qp_sol = self._robot.controller.stance_leg_controller.get_hac_action(
+            stance_action, qp_sol, simplex_ddq = self._robot.controller.stance_leg_controller.get_hac_action(
                 chi=self.chi,
                 state_trig=state_trig,
                 F_kp=F_kp,
                 F_kd=F_kd
             )
-
+            _, _, _, phy_nominal_ddq = self._robot.controller.get_action(phydrl=False)
+            drl_nominal_ddq = (
+                    (simplex_ddq - phy_nominal_ddq) / self._robot.controller.ddpg_agent.params.action_magnitude)
             e_stance = time.time()
             print(f"swing_action time: {e_swing - s}")
             print(f"stance_action time: {e_stance - e_swing}")
@@ -236,7 +238,7 @@ class HATeacher:
                     action.desired_torque for action in actions
                 ])
 
-            return vectorized_action, dict(qp_sol=qp_sol)
+            return vectorized_action, dict(qp_sol=qp_sol), drl_nominal_ddq
 
         else:
             raise RuntimeError(f"Unsupported HAC action {self._last_action_mode}")

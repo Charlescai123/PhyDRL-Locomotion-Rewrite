@@ -28,7 +28,7 @@ from config.locomotion.controllers.stance_params import StanceControllerParams
 from agents.phydrl.policies.ddpg import DDPGAgent
 from config.a1_phydrl_params import A1PhyDRLParams
 # from locomotion.robot.a1 import A1
-
+from agents.phydrl.replay_buffers.replay_memory import ReplayMemory
 from locomotion.mpc_controller import swing_leg_controller
 from locomotion.gait_scheduler import offset_gait_scheduler
 from locomotion.state_estimator import com_velocity_estimator
@@ -102,7 +102,10 @@ class WholeBodyController(object):
             robot=robot,
             mat_engine=mat_engine
         )  # HA Teacher
-
+        self._replay_buffer = ReplayMemory(size=5e4)
+        self._max_episode_steps = 5000
+        self._total_steps = 50000
+        self._minibatch_size = 128
         self._logs = []
         self._logdir = logdir
 
@@ -284,39 +287,9 @@ class WholeBodyController(object):
         # self._stance_controller.update(self._time_since_reset, future_contact_estimate)
         self._stance_controller.update(self._time_since_reset)
 
-    # def get_action(self):
-    #     """Returns the control outputs (e.g. positions/torques) for all motors."""
-    #     s = time.time()
-    #     swing_action = self._swing_controller.get_action()
-    #     e_swing = time.time()
-    #     stance_action, qp_sol = self._stance_controller.get_action()
-    #     e_stance = time.time()
-    #     print(f"swing_action time: {e_swing - s}")
-    #     print(f"stance_action time: {e_stance - e_swing}")
-    #     print(f"total get_action time: {e_stance - s}")
-    #
-    #     actions = []
-    #     for joint_id in range(self._robot.num_motors):
-    #         if joint_id in swing_action:
-    #             actions.append(swing_action[joint_id])
-    #         else:
-    #             assert joint_id in stance_action
-    #             actions.append(stance_action[joint_id])
-    #
-    #     vectorized_action = MotorCommand(
-    #         desired_position=[action.desired_position for action in actions],
-    #         kp=[action.kp for action in actions],
-    #         desired_velocity=[action.desired_velocity for action in actions],
-    #         kd=[action.kd for action in actions],
-    #         desired_torque=[
-    #             action.desired_torque for action in actions
-    #         ])
-    #
-    #     return vectorized_action, dict(qp_sol=qp_sol)
-
-    def get_action(self, phydrl=False, drl_action=None):
+    def get_action(self, phydrl=False, drl_action=None, simplex=False):
         """Returns the control outputs (e.g. positions/torques) for all motors."""
-
+        drl_nominal_ddq = None
         # Get PhyDRL action (Inference)
         if phydrl is True and drl_action is None:
             # print(f"Getting action from PhyDRL model {self._ddpg_agent.params.model_path}")
@@ -335,6 +308,10 @@ class WholeBodyController(object):
 
             s_drl = time.time()
             drl_action = self._ddpg_agent.get_action(observation, mode='test')
+
+            if simplex:
+                drl_nominal_ddq = copy.deepcopy(drl_action)
+
             # drl_action_magnitude = np.array([2, 2, 3, 4, 4, 2])
             drl_action_magnitude = np.array([2, 2, 3, 4, 4, 2])
             drl_action *= drl_action_magnitude
@@ -350,7 +327,7 @@ class WholeBodyController(object):
         s = time.time()
         swing_action = self._swing_controller.get_action()
         e_swing = time.time()
-        stance_action, qp_sol = self._stance_controller.get_action(drl_action=drl_action)
+        stance_action, qp_sol, phy_nominal_ddq = self._stance_controller.get_action(drl_action=drl_action)
         e_stance = time.time()
         # print(f"swing_action time: {e_swing - s}")
         # print(f"stance_action time: {e_stance - e_swing}")
@@ -373,101 +350,7 @@ class WholeBodyController(object):
                 action.desired_torque for action in actions
             ])
 
-        return vectorized_action, dict(qp_sol=qp_sol)
-
-    # def get_drl_action(self, current_step, states_vector, drl_action=None):
-    #     """Returns the control outputs (e.g. positions/torques) for all motors."""
-    #     s = time.time()
-    #     swing_action = self.swing_leg_controller.get_action()
-    #     e_swing = time.time()
-    #     # stance_action, qp_sol, diff_q, diff_dq = self._stance_leg_controller.get_action_our(current_step, states_vector, drl_action)
-    #     # stance_action, qp_sol, diff_q, diff_dq = self._stance_leg_controller.get_action(drl_action)
-    #     stance_action, qp_sol, diff_q, diff_dq = self.stance_leg_controller.get_final_action(current_step,
-    #                                                                                          states_vector, drl_action)
-    #     e_stance = time.time()
-    #     print(f"swing_action time: {e_swing - s}")
-    #     print(f"stance_action time: {e_stance - e_swing}")
-    #     print(f"total get_action time: {e_stance - s}")
-    #
-    #     # print(f"swing_action: {swing_action}")
-    #     # print(f"stance_action: {stance_action}")
-    #     actions = []
-    #     for joint_id in range(self._robot.num_motors):
-    #         if joint_id in swing_action:
-    #             actions.append(swing_action[joint_id])
-    #         else:
-    #             assert joint_id in stance_action
-    #             actions.append(stance_action[joint_id])
-    #
-    #     vectorized_action = MotorCommand(
-    #         desired_position=[action.desired_position for action in actions],
-    #         kp=[action.kp for action in actions],
-    #         desired_velocity=[action.desired_velocity for action in actions],
-    #         kd=[action.kd for action in actions],
-    #         desired_torque=[
-    #             action.desired_torque for action in actions
-    #         ])
-    #
-    #     return vectorized_action, dict(qp_sol=qp_sol), diff_q, diff_dq
-    #
-    # def get_phydrl_action(self):
-    #     print("Entering get_phydrl_action!")
-    #     # observations = copy.deepcopy(self.a1.observation)
-    #
-    #     import time
-    #     s = time.time()
-    #
-    #     states = dict(timestamp=self._robot.time_since_reset,
-    #                   base_rpy=self._robot.base_orientation_rpy,
-    #                   motor_angles=self._robot.motor_angles,
-    #                   base_linear_vel=self._robot.base_linear_velocity,
-    #                   base_vels_body_frame=self.state_estimator.com_velocity_in_body_frame,
-    #                   # base_rpy_rate=self.robot.GetBaseRollPitchYawRate(), todo: rpy rate or angular vel ???
-    #                   base_rpy_rate=self._robot.base_angular_velocity,
-    #                   motor_vels=self._robot.motor_velocities,
-    #                   contacts=self._robot.foot_contacts)
-    #
-    #     angle = states['base_rpy']
-    #
-    #     com_position_xyz = self.state_estimator.estimate_robot_x_y_z()
-    #
-    #     base_rpy_rate = states['base_rpy_rate']
-    #     com_velocity = states['base_vels_body_frame']
-    #
-    #     states_vector = np.hstack((com_position_xyz, angle, com_velocity, base_rpy_rate))
-    #     set_points = self.set_point
-    #
-    #     # Tracking error
-    #     tracking_error = states_vector - set_points
-    #     print(f"states_vector: {states_vector}")
-    #     print(f"set_points: {set_points}")
-    #     print(f"tracking_error: {tracking_error}")
-    #
-    #     e1 = time.time()
-    #     print(f"part 1 taking time: {e1 - s}")
-    #
-    #     observations = copy.deepcopy(tracking_error)
-    #
-    #     e2 = time.time()
-    #     print(f"part 2 taking time: {e2 - e1}")
-    #
-    #     drl_action = self._ddpg_agent.get_action(observations, mode='test')
-    #
-    #     print(f"drl_action: {drl_action}")
-    #     e3 = time.time()
-    #     print(f"part 3 taking time: {e3 - e2}")
-    #
-    #     print(f"Get PhyDRL action time: {e3 - s}")
-    #
-    #     # _, terminal, abort = self.a1.step(drl_action, action_mode='residual')
-    #
-    #     phydrl_action, qp_sol, diff_q, diff_dq = self.get_drl_action('self.current_step',
-    #                                                                  states_vector, drl_action)
-    #
-    #     e4 = time.time()
-    #     print(f"part 4 taking time: {e4 - e3}")
-    #
-    #     return phydrl_action, dict(qp_sol=qp_sol)
+        return vectorized_action, dict(qp_sol=qp_sol), drl_nominal_ddq, phy_nominal_ddq
 
     def _get_stand_action(self):
         return MotorCommand(
@@ -562,6 +445,8 @@ class WholeBodyController(object):
         logging.info("Low level thread started...")
         curr_time = time.time()
         print(f"control_thread: {self.control_thread}")
+        dwell_steps = 0
+        global_steps = 0
 
         while self._is_control:
 
@@ -583,39 +468,59 @@ class WholeBodyController(object):
                 # time.sleep(0.001)
 
             elif self._mode == ControllerMode.WALK:
+                action = None
+                curr_state = self.stance_leg_controller.tracking_error
+                reward_list = []
+                critic_loss_list = []
+                ep_steps = 0
 
-                # Simplex Enable
-                if self._ha_teacher.teacher_enable:
-                    curr_state = self.stance_leg_controller.tracking_error  # Current state
-                    action, qp_sol = self._ha_teacher.get_hac_action(states=curr_state)
+                for _ in range(self._max_episode_steps):
 
-                # Without Simplex
-                else:
-                    s_action = time.time()
-                    if self._ddpg_agent is not None:
-                        action, qp_sol = self.get_action(phydrl=True)
-                        print("get PhyDRL action")
+                    # Simplex Enable
+                    if self._ha_teacher.teacher_enable:
+                        action, qp_sol, drl_nominal_ddq = self._ha_teacher.get_hac_action(states=curr_state)
+                    # Without Simplex
                     else:
-                        action, qp_sol = self.get_action(phydrl=False)
-                        print("get mpc action")
-                    e_action = time.time()
-                    print(f"get action duration: {e_action - s_action}")
+                        print("Simplex non implemented for continual learning")
 
-                # print(f"action is: {action}")
-                # time.sleep(0.001)
-                ss = time.time()
-                self._robot.step(action)
-                ee = time.time()
+                    ss = time.time()
+                    self._robot.step(action)
+                    next_state = self.stance_leg_controller.tracking_error  # Current state
+                    reward = get_lyapunov_reward(s=curr_state, s_next=next_state)
+                    self._replay_buffer.add((curr_state, drl_nominal_ddq, reward, next_state, False))
 
-                s_log = time.time()
-                self._update_logging(action, qp_sol)
-                e_log = time.time()
-                print(f"log update time: {e_log - s_log}")
-                print(f"step duration: {ee - ss}")
+                    reward_list.append(reward)
+
+                    if self._replay_buffer.get_size() > self._minibatch_size:
+                        minibatch = self._replay_buffer.sample(self._minibatch_size)
+                        critic_loss = self.ddpg_agent.optimize(minibatch)
+                    else:
+                        critic_loss = 100
+
+                    critic_loss_list.append(critic_loss)
+                    curr_state = copy.deepcopy(next_state)
+
+                    global_steps += 1
+                    ep_steps += 1
+                    ee = time.time()
+                    s_log = time.time()
+                    self._update_logging()
+                    e_log = time.time()
+                    print(f"log update time: {e_log - s_log}")
+                    print(f"step duration: {ee - ss}")
 
             else:
                 logging.info("Running loop terminated, exiting...")
                 break
+
+                mean_reward = np.mean(reward_list)
+                mean_critic_loss = np.mean(critic_loss_list)
+                print(f"Training at {global_steps}, average_reward{mean_reward}, average_critic{mean_critic_loss}")
+
+            self.ddpg_agent.save_weights(self._logdir + '/online_cl_model')
+
+            with open(self._logdir + '/buffer.pickle', 'wb') as f:
+                pickle.dump(self._replay_buffer, f)
 
             final_time = time.time()
             duration = final_time - curr_time
@@ -700,7 +605,6 @@ class WholeBodyController(object):
 
     def dump_logs(self):
         self._flush_logging()
-
     @property
     def state_vector(self):
         com_position = self.state_estimator.com_position_in_ground_frame
@@ -712,3 +616,42 @@ class WholeBodyController(object):
 
         state_vector = np.hstack((com_position, com_roll_pitch_yaw, com_velocity, com_roll_pitch_yaw_rate))
         return state_vector
+
+def get_lyapunov_reward(s, s_next):
+    p_mat4 = np.array([[118.83570123101, -1.41466936361059e-14, -7.74878980369276e-16, -4.28620267366142e-13,
+                        1.77104974116305, 1.0914658030531e-13, -8.47570932463836e-15, -2.52234339728665e-16,
+                        -2.90202953929494e-15, -2.91177290574822e-15],
+                       [-1.41466936361059e-14, 2.71120800069087e-06, -1.69789213802264e-14, -1.04804330946118e-13,
+                        2.30100584844932e-16, 1.6420103779497e-14, -1.21896753338876e-15, 8.33443687830191e-07,
+                        -3.89467348967968e-15, -1.17332842761011e-14],
+                       [-7.74878980369276e-16, -1.69789213802264e-14, 2.77811891813838e-06, 1.23697571395491e-13,
+                        2.25562936581415e-16, -2.3008164506072e-15, 2.2505744167202e-16, -5.23705946818313e-15,
+                        8.55050158007754e-07, 1.46599620833702e-14],
+                       [-4.28620267366142e-13, -1.04804330946118e-13, 1.23697571395491e-13, 129.692650109888,
+                        -4.4876591346318e-14, 1.15093245097422e-13, 7.88823216885879e-14, -4.55269055462651e-14,
+                        5.36345985228269e-14, 2.68789780217039],
+                       [1.77104974116305, 2.30100584844932e-16, 2.25562936581415e-16, -4.4876591346318e-14,
+                        3.06811961466463, 1.43633345827227e-14, -1.67237093395989e-15, -3.25317676205998e-16,
+                        3.84673358731058e-17, -2.13353051325487e-15],
+                       [1.0914658030531e-13, 1.6420103779497e-14, -2.3008164506072e-15, 1.15093245097422e-13,
+                        1.43633345827227e-14, 7.68528406239351e-07, -4.34499130427616e-15, 2.62606155587371e-15,
+                        -2.53613901411584e-16, 8.22206623381904e-15],
+                       [-8.47570932463836e-15, -1.21896753338876e-15, 2.2505744167202e-16, 7.88823216885879e-14,
+                        -1.67237093395989e-15, -4.34499130427616e-15, 6.88192800383425e-07, 1.99167451325745e-17,
+                        -1.33451029121985e-15, 6.92211632759464e-15],
+                       [-2.52234339728665e-16, 8.33443687830191e-07, -5.23705946818313e-15, -4.55269055462651e-14,
+                        -3.25317676205998e-16, 2.62606155587371e-15, 1.99167451325745e-17, 3.67579589406552e-07,
+                        -2.63427397571634e-15, -5.25797263071599e-15],
+                       [-2.90202953929494e-15, -3.89467348967968e-15, 8.55050158007754e-07, 5.36345985228269e-14,
+                        3.84673358731058e-17, -2.53613901411584e-16, -1.33451029121985e-15, -2.63427397571634e-15,
+                        3.75439766169053e-07, 6.43418363102829e-15],
+                       [-2.91177290574822e-15, -1.17332842761011e-14, 1.46599620833702e-14, 2.68789780217039,
+                        -2.13353051325487e-15, 8.22206623381904e-15, 6.92211632759464e-15, -5.25797263071599e-15,
+                        6.43418363102829e-15, 0.268777685660629]])
+    s_new = s[2:]
+    s_next_new = s_next[2:]
+    ly_reward_curr = s_new.T @ p_mat4 @ s_new
+    ly_reward_next = s_next_new.T @ p_mat4 @ s_next_new
+    reward = ly_reward_curr - ly_reward_next  # multiply scaler to decrease
+
+    return reward

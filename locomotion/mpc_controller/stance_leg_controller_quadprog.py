@@ -5,6 +5,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import copy
 from typing import Any, Sequence, Tuple
 import pybullet as p
 import numpy as np
@@ -195,6 +196,7 @@ class TorqueStanceLegController:
         MIN_DDQ = self._params.min_ddq
         MAX_DDQ = self._params.max_ddq
         self._phy_ddq = QP_KP @ (desired_q - robot_q) + QP_KD @ (desired_dq - robot_dq)
+        phy_nominal_ddq = copy.deepcopy(self._phy_ddq)
         print(f"phy_ddq: {self._phy_ddq}")
 
         # Residual action
@@ -249,7 +251,7 @@ class TorqueStanceLegController:
         self._error_q = desired_q - robot_q
         self._error_dq = desired_dq - robot_dq
 
-        return action, contact_forces
+        return action, contact_forces, phy_nominal_ddq
 
     def get_hac_action(self, chi, state_trig, F_kp: np.ndarray = None, F_kd: np.ndarray = None):
         """Computes the torque for stance legs."""
@@ -323,7 +325,7 @@ class TorqueStanceLegController:
         MIN_DDQ = self._params.min_ddq
         MAX_DDQ = self._params.max_ddq
         self._total_ddq = np.clip(desired_ddq, MIN_DDQ, MAX_DDQ)
-
+        simplex_ddq = copy.deepcopy(self._total_ddq)
         # Calculate needed contact forces
         foot_positions = self._robot.foot_positions_in_body_frame
         e2 = time.time()
@@ -367,4 +369,4 @@ class TorqueStanceLegController:
         self._error_q = robot_q - desired_q
         self._error_dq = robot_dq - desired_dq
 
-        return action, contact_forces
+        return action, contact_forces, simplex_ddq
