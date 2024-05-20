@@ -1,7 +1,7 @@
 _group_:
   pi: 3.141592653589793
   gait_scheduler:
-    _target_: locomotion.gait_generator.offset_gait_generator.OffsetGaitGenerator
+    _target_: locomotion.gait_scheduler.offset_gait_generator.OffsetGaitGenerator
     init_phase:
     - 0.0
     - 0.0

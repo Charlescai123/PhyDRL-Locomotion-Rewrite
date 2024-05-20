@@ -14,7 +14,7 @@ import sys
 import time
 
 from locomotion.robots.motors import MotorCommand
-from locomotion.gait_generator import gait_generator as gait_generator_lib
+from locomotion.gait_scheduler import gait_scheduler as gait_scheduler_lib
 from config.locomotion.controllers.stance_params import StanceControllerParams
 
 try:
@@ -53,7 +53,7 @@ class TorqueStanceLegController:
     def __init__(
             self,
             robot: Any,
-            gait_generator: Any,
+            gait_scheduler: Any,
             state_estimator: Any,
             desired_speed: Tuple[float, float] = (0, 0),
             desired_twisting_speed: float = 0,
@@ -71,7 +71,7 @@ class TorqueStanceLegController:
 
         Args:
           robot: A robot instance.
-          gait_generator: Used to query the locomotion phase and leg states.
+          gait_scheduler: Used to query the locomotion phase and leg states.
           state_estimator: Estimate the robot states (e.g. CoM velocity).
           desired_speed: desired CoM speed in x-y plane.
           desired_twisting_speed: desired CoM rotating speed in z direction.
@@ -85,7 +85,7 @@ class TorqueStanceLegController:
         # TODO: add acc_weight support for mpc torque stance controller.
         self._params = stance_params
         self._robot = robot
-        self._gait_generator = gait_generator
+        self._gait_scheduler = gait_scheduler
         self._state_estimator = state_estimator
         self.desired_speed = np.array((desired_speed[0], desired_speed[1], 0))
         self.desired_twisting_speed = desired_twisting_speed
@@ -116,6 +116,39 @@ class TorqueStanceLegController:
 
         self._future_contact_estimate = np.ones((self._planning_horizon_steps, 4))
 
+        self._stance_action = None
+        self._ground_reaction_forces = np.nan
+
+        # Variables for recording
+        self._error_q = np.array([0, 0, 0, 0, 0, 0])
+        self._error_dq = np.array([0, 0, 0, 0, 0, 0])
+
+
+    @property
+    def tracking_error(self):
+        return np.hstack((self._error_q, self._error_dq)).reshape(12, 1)
+
+    @property
+    def stance_action(self):
+        return self._stance_action
+
+    @property
+    def ground_reaction_forces(self):
+        return self._ground_reaction_forces
+
+    @property
+    def stance_ddq(self):
+        phy_ddq = np.array([0, 0, 0, 0, 0, 0])
+        drl_ddq = np.array([0, 0, 0, 0, 0, 0])
+        total_ddq = np.array([0, 0, 0, 0, 0, 0])
+        return np.vstack((phy_ddq, drl_ddq, total_ddq))
+
+    @property
+    def stance_ddq_limit(self):
+        min_ddq = np.array([0, 0, 0, 0, 0, 0])
+        max_ddq = np.array([0, 0, 0, 0, 0, 0])
+        return np.vstack((min_ddq, max_ddq))
+
     def reset(self, current_time):
         del current_time
         # Re-construct CPP solver to remove stochasticity due to warm-start
@@ -132,7 +165,7 @@ class TorqueStanceLegController:
         del current_time
         self._future_contact_estimate = future_contact_estimate
 
-    def get_action(self):
+    def get_action(self, drl_action=None):
         """Computes the torque for stance legs."""
 
         ############################################## Part 1 ##############################################
@@ -148,11 +181,15 @@ class TorqueStanceLegController:
         desired_com_angular_velocity = np.array(
             (0., 0., self.desired_twisting_speed), dtype=np.float64)
 
+        # Desired q and dq
+        desired_q = np.hstack((desired_com_position, desired_com_roll_pitch_yaw))
+        desired_dq = np.hstack((desired_com_velocity, desired_com_angular_velocity))
+
         foot_contact_states = np.array(
-            [(leg_state in (gait_generator_lib.LegState.STANCE,
-                            gait_generator_lib.LegState.EARLY_CONTACT,
-                            gait_generator_lib.LegState.LOSE_CONTACT))
-             for leg_state in self._gait_generator.leg_states],
+            [(leg_state in (gait_scheduler_lib.LegState.STANCE,
+                            gait_scheduler_lib.LegState.EARLY_CONTACT,
+                            gait_scheduler_lib.LegState.LOSE_CONTACT))
+             for leg_state in self._gait_scheduler.leg_states],
             dtype=np.int32)
 
         if not foot_contact_states.any():
@@ -181,17 +218,21 @@ class TorqueStanceLegController:
         ############################################## Part 3 ##############################################
         s3 = time.time()
         # com_position = np.array(self._robot.base_position)
-        com_position = np.array(self._state_estimator.com_position_in_ground_frame)
+        robot_com_position = np.array(self._state_estimator.com_position_in_ground_frame)
 
         # We use the body yaw aligned world frame for MPC computation.
         # com_roll_pitch_yaw = np.array(self._robot.base_orientation_rpy,
         #                               dtype=np.float64)
-        com_roll_pitch_yaw = np.array(p.getEulerFromQuaternion(
+        robot_com_roll_pitch_yaw = np.array(p.getEulerFromQuaternion(
             self._state_estimator.com_orientation_quaternion_in_ground_frame))
 
         # print("Com Position: {}".format(com_position))
-        com_roll_pitch_yaw[2] = 0
+        robot_com_roll_pitch_yaw[2] = 0
         # gravity_projection_vec = np.array([0., 0., 1.])
+
+        robot_com_velocity = self._state_estimator.com_velocity_in_body_frame
+        robot_com_roll_pitch_yaw_rate = self._robot.base_angular_velocity_in_body_frame
+
         gravity_projection_vec = np.array(
             self._state_estimator.gravity_projection_vector)
         predicted_contact_forces = [0] * self._num_legs * _FORCE_DIMENSION
@@ -209,21 +250,23 @@ class TorqueStanceLegController:
         e3 = time.time()
         print(f".....................................part 3 time: {e3 - s3}")
 
+        robot_q = np.hstack((robot_com_position, robot_com_roll_pitch_yaw))
+        robot_dq = np.hstack((robot_com_velocity, robot_com_roll_pitch_yaw_rate))
+
         ############################################## Part 4 ##############################################
         s4 = time.time()
 
         # All computations are conducted under the body ground frame
         predicted_contact_forces = self._cpp_mpc.compute_contact_forces(
-            com_position,  # com_position
-            np.asarray(self._state_estimator.com_velocity_in_ground_frame,
-                       dtype=np.float64),  # com_velocity
-            np.array(com_roll_pitch_yaw, dtype=np.float64),  # com_roll_pitch_yaw
+            robot_com_position,  # com_position
+            np.asarray(robot_com_velocity),  # com_velocity
+            np.array(robot_com_roll_pitch_yaw, dtype=np.float64),  # com_roll_pitch_yaw
             gravity_projection_vec,  # Normal Vector of ground
             # Angular velocity in the yaw aligned world frame is actually different
             # from rpy rate. We use it here as a simple approximation.
             # np.asarray(self._state_estimator.com_rpy_rate_ground_frame,
             #            dtype=np.float64),  #com_angular_velocity
-            self._robot.base_angular_velocity_in_body_frame,
+            robot_com_roll_pitch_yaw_rate,
             np.asarray(contact_estimates,
                        dtype=np.float64).flatten(),  # Foot contact states
             np.array(self._robot.foot_positions_in_body_frame.flatten(),
@@ -270,12 +313,13 @@ class TorqueStanceLegController:
         s5 = time.time()
 
         contact_forces = {}
+        contact_forces_record = []
         for i in range(self._num_legs):
-            contact_forces[i] = np.array(
-                predicted_contact_forces[
-                i * _FORCE_DIMENSION: (i + 1) * _FORCE_DIMENSION]
-            )
-        # print(contact_forces)
+            forces = predicted_contact_forces[
+                     i * _FORCE_DIMENSION: (i + 1) * _FORCE_DIMENSION]
+            contact_forces[i] = np.array(forces)
+            contact_forces_record.append(forces)
+        print(f"contact_forces: {contact_forces}")
         # input("Any Key...")
 
         action = {}
@@ -293,4 +337,11 @@ class TorqueStanceLegController:
         # print("After IK: {}".format(time.time() - start_time))
         e5 = time.time()
         print(f".....................................part 5 time: {e5 - s5}")
+
+        # Save values for record
+        self._stance_action = action
+        self._ground_reaction_forces = contact_forces_record
+        self._error_q = robot_q - desired_q
+        self._error_dq = robot_dq - desired_dq
+
         return action, contact_forces

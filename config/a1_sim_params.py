@@ -66,8 +66,11 @@ class A1SimParams:
         self.stance_params.objective_function = 'acceleration'  # use acceleration
 
         # Original
-        self.stance_params.qp_kp = np.array((0., 0., 100., 100., 100., 0.))
-        self.stance_params.qp_kd = np.array((40., 30., 10., 10., 10., 30.))
+        # self.stance_params.qp_kp = np.array((0., 0., 100., 100., 100., 0.))
+        # self.stance_params.qp_kd = np.array((40., 30., 10., 10., 10., 30.))
+
+        self.stance_params.qp_kp = np.diag((0., 0., 63, 33., 33., 31.))
+        self.stance_params.qp_kd = np.diag((24., 20., 20., 22., 22., 22.))
 
         # Phydrl
         # self.stance_params.qp_kp = np.array((0.1, 0.1, 100., 100., 100., 100))

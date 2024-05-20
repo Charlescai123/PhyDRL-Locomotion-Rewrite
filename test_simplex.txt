@@ -1,0 +1,25 @@
+pybullet build time: Nov 28 2023 23:52:03
+2024-05-20 10:42:29.962924: I tensorflow/stream_executor/platform/default/dso_loader.cc:53] Successfully opened dynamic library libcudart.so.11.0
+Traceback (most recent call last):
+  File "/home/ippc/anaconda3/envs/PhyDRL/lib/python3.9/runpy.py", line 197, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/ippc/anaconda3/envs/PhyDRL/lib/python3.9/runpy.py", line 87, in _run_code
+    exec(code, run_globals)
+  File "/home/ippc/Desktop/PhyDRL-Locomotion-Rewrite/examples/a1_mpc_controller_example.py", line 22, in <module>
+    from locomotion import wbc_controller
+  File "/home/ippc/Desktop/PhyDRL-Locomotion-Rewrite/locomotion/wbc_controller.py", line 40, in <module>
+    from locomotion.ha_teacher import ha_teacher
+  File "/home/ippc/Desktop/PhyDRL-Locomotion-Rewrite/locomotion/ha_teacher/ha_teacher.py", line 2, in <module>
+    import matlab.engine
+  File "/home/ippc/anaconda3/envs/PhyDRL/lib/python3.9/site-packages/matlab/engine/__init__.py", line 102, in <module>
+    _session = EngineSession()
+  File "/home/ippc/anaconda3/envs/PhyDRL/lib/python3.9/site-packages/matlab/engine/enginesession.py", line 8, in __init__
+    pythonengine.createProcess()
+KeyboardInterrupt
+Exception ignored in: <function EngineSession.__del__ at 0x744b8a0dc9d0>
+Traceback (most recent call last):
+  File "/home/ippc/anaconda3/envs/PhyDRL/lib/python3.9/site-packages/matlab/engine/enginesession.py", line 14, in __del__
+    self.release()
+  File "/home/ippc/anaconda3/envs/PhyDRL/lib/python3.9/site-packages/matlab/engine/enginesession.py", line 17, in release
+    if self._process_created:
+AttributeError: 'EngineSession' object has no attribute '_process_created'

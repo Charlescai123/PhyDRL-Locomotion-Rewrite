@@ -113,7 +113,7 @@ hydra:
     - hydra.mode=RUN
     task: []
   job:
-    name: gait_generator
+    name: gait_scheduler
     chdir: null
     override_dirname: ''
     id: ???

@@ -7,7 +7,7 @@ import numpy as np
 from typing import Any, Mapping, Sequence, Tuple
 
 from locomotion.robots.motors import MotorCommand
-from locomotion.gait_generator import gait_generator as gait_generator_lib
+from locomotion.gait_scheduler import gait_scheduler as gait_scheduler_lib
 from config.locomotion.controllers.swing_params import SwingControllerParams
 
 
@@ -106,7 +106,7 @@ class RaibertSwingLegController:
 
     def __init__(self,
                  robot: Any,
-                 gait_generator: Any,
+                 gait_scheduler: Any,
                  state_estimator: Any,
                  desired_speed: Tuple[float, float],
                  desired_twisting_speed: float,
@@ -118,7 +118,7 @@ class RaibertSwingLegController:
 
         Args:
           robot: A robot instance.
-          gait_generator: Generates the stance/swing pattern.
+          gait_scheduler: Generates the stance/swing pattern.
           state_estimator: Estimates the CoM speeds.
           desired_speed: Behavior robot. X-Y speed.
           desired_twisting_speed: Behavior control robot.
@@ -128,8 +128,8 @@ class RaibertSwingLegController:
         """
         self._robot = robot
         self._state_estimator = state_estimator
-        self._gait_generator = gait_generator
-        self._last_leg_states = gait_generator.desired_leg_states
+        self._gait_scheduler = gait_scheduler
+        self._last_leg_states = gait_scheduler.desired_leg_states
 
         # self._swing_config = _load_controller_config(config_path)
 
@@ -146,6 +146,8 @@ class RaibertSwingLegController:
         self._foot_placement_interval = swing_params.foot_placement_interval
         self._raibert_kp = swing_params.raibert_kp
 
+        self._swing_action = None
+
         self.reset(0)
 
     def reset(self, current_time: float) -> None:
@@ -156,7 +158,7 @@ class RaibertSwingLegController:
         """
         del current_time
 
-        self._last_leg_states = self._gait_generator.desired_leg_states
+        self._last_leg_states = self._gait_scheduler.desired_leg_states
         self._phase_switch_foot_local_position = \
             self._robot.foot_positions_in_body_frame.copy()
 
@@ -166,7 +168,7 @@ class RaibertSwingLegController:
           current_time: The wall time in seconds.
         """
         del current_time
-        new_leg_states = self._gait_generator.desired_leg_states
+        new_leg_states = self._gait_scheduler.desired_leg_states
 
         # print(f"last_leg_states: {self._last_leg_states}")
         # print(f"phase_switch_foot_local_position: {self._phase_switch_foot_local_position}")
@@ -174,12 +176,16 @@ class RaibertSwingLegController:
         # Detects phase switch for each leg, so we can remember the feet position at
         # the beginning of the swing phase.
         for leg_id, state in enumerate(new_leg_states):
-            if (state == gait_generator_lib.LegState.SWING
+            if (state == gait_scheduler_lib.LegState.SWING
                     and state != self._last_leg_states[leg_id]):
                 self._phase_switch_foot_local_position[leg_id] = (
                     self._robot.foot_positions_in_body_frame[leg_id])
 
         self._last_leg_states = copy.deepcopy(new_leg_states)
+
+    @property
+    def swing_action(self):
+        return self._swing_action
 
     @property
     def foot_lift_height(self):
@@ -227,14 +233,14 @@ class RaibertSwingLegController:
         e1 = time.time()
         print(f"swing get_action part 1 time: {e1 - s}")
 
-        for leg_id, leg_state in enumerate(self._gait_generator.leg_states):
+        for leg_id, leg_state in enumerate(self._gait_scheduler.leg_states):
 
-            # print(f"leg_state: {self._gait_generator.leg_states}")
+            # print(f"leg_state: {self._gait_scheduler.leg_states}")
 
             # Skip other leg states which is not SWING
-            if leg_state in (gait_generator_lib.LegState.STANCE,
-                             gait_generator_lib.LegState.EARLY_CONTACT,
-                             gait_generator_lib.LegState.LOSE_CONTACT):
+            if leg_state in (gait_scheduler_lib.LegState.STANCE,
+                             gait_scheduler_lib.LegState.EARLY_CONTACT,
+                             gait_scheduler_lib.LegState.LOSE_CONTACT):
                 continue
 
             # Not consider the body pitch/roll and all calculation is in the body frame.
@@ -256,7 +262,7 @@ class RaibertSwingLegController:
                 # Use raibert heuristic to determine foot landing position in hip_ground frame
                 foot_horizontal_landing_position = (
                         hip_horizontal_velocity *
-                        self._gait_generator.stance_duration[leg_id] / 2
+                        self._gait_scheduler.stance_duration[leg_id] / 2
                         - self._raibert_kp * (target_hip_horizontal_velocity - hip_horizontal_velocity)
                 )
 
@@ -287,13 +293,13 @@ class RaibertSwingLegController:
 
             # foot target position in body frame
             foot_target_position = _gen_swing_foot_trajectory(
-                input_phase=self._gait_generator.normalized_phase[leg_id],
+                input_phase=self._gait_scheduler.normalized_phase[leg_id],
                 start_pos=self._phase_switch_foot_local_position[leg_id],
                 end_pos=foot_landing_position,
                 foot_lift_height=self._foot_lift_height)
 
             # print(f"foot target position: {foot_target_position}")
-            # print(f"phase is: {self._gait_generator.normalized_phase[leg_id]}")
+            # print(f"phase is: {self._gait_scheduler.normalized_phase[leg_id]}")
             # print(f"start_pos: {self._phase_switch_foot_local_position[leg_id]}")
 
             joint_ids, joint_angles = (
@@ -317,8 +323,8 @@ class RaibertSwingLegController:
                                             desired_velocity=0,
                                             kd=kds[joint_id],
                                             desired_torque=0)
-            # if self._gait_generator.desired_leg_states[
-            #     leg_id] == gait_generator_lib.LegState.SWING:
+            # if self._gait_scheduler.desired_leg_states[
+            #     leg_id] == gait_scheduler_lib.LegState.SWING:
             #     # This is a hybrid action for PD control.
             #     action[joint_id] = (joint_angle_leg_id[0], kps[joint_id], 0,
             #                         kds[joint_id], 0)

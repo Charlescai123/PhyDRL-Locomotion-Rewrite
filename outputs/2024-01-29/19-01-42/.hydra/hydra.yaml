@@ -113,12 +113,12 @@ hydra:
     - hydra.mode=RUN
     task: []
   job:
-    name: gait_generator
+    name: gait_scheduler
     chdir: null
     override_dirname: ''
     id: ???
     num: ???
-    config_name: robot/gait_generator/walk.yaml
+    config_name: robot/gait_scheduler/walk.yaml
     env_set: {}
     env_copy: []
     config:

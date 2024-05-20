@@ -2,7 +2,7 @@
 from ml_collections import ConfigDict
 import numpy as np
 
-from locomotion.gait_generator import gait_generator as gait_generator_lib
+from locomotion.gait_scheduler import gait_scheduler as gait_generator_lib
 
 LegState = gait_generator_lib.LegState
 

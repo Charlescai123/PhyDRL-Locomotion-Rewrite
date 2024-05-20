@@ -154,7 +154,7 @@ def main(_):
     pickle.dump(states, open(os.path.join(log_path, 'states_0.pkl'), 'wb'))
     logging.info("Data logged to: {}".format(log_path))
   print(totalr)
-  # print("End Phase: {}".format(env.gait_generator.current_phase))
+  # print("End Phase: {}".format(env.gait_scheduler.current_phase))
   episode_lengths.append(steps)
   returns.append(totalr)
 

@@ -30,14 +30,14 @@ from config.a1_phydrl_params import A1PhyDRLParams
 # from locomotion.robot.a1 import A1
 
 from locomotion.mpc_controller import swing_leg_controller
-from locomotion.gait_generator import offset_gait_generator
+from locomotion.gait_scheduler import offset_gait_scheduler
 from locomotion.state_estimator import com_velocity_estimator
 
 from locomotion.mpc_controller import stance_leg_controller_mpc
 from locomotion.mpc_controller import stance_leg_controller_quadprog
 
 from locomotion.robots.motors import MotorCommand
-from locomotion.robots.motors import MotorControlMode
+from locomotion.ha_teacher import ha_teacher
 
 
 class ControllerMode(enum.Enum):
@@ -64,6 +64,7 @@ class WholeBodyController(object):
     def __init__(
             self,
             robot: Any = None,
+            mat_engine: Any = None,
             ddpg_agent: DDPGAgent = None,
             desired_speed: Tuple[float, float] = [0., 0.],
             desired_twisting_speed: float = 0.,
@@ -92,10 +93,15 @@ class WholeBodyController(object):
 
         self._robot = robot
         self._ddpg_agent = ddpg_agent
-        self._gait_generator = None
+        self._gait_scheduler = None
         self._velocity_estimator = None
         self._swing_params = swing_params
         self._stance_params = stance_params
+
+        self._ha_teacher = ha_teacher.HATeacher(
+            robot=robot,
+            mat_engine=mat_engine
+        )  # HA Teacher
 
         self._logs = []
         self._logdir = logdir
@@ -129,13 +135,14 @@ class WholeBodyController(object):
         # self.run_thread = multiprocessing.Process(target=self.run)
         # self.run_thread.start()
 
-        vx_ref = 0.3
-        px_ref = 0
-        pz_ref = 0.24
-        self.set_point = np.array([px_ref, 0, pz_ref,
-                                   0., 0., 0.,
-                                   vx_ref, 0., 0.,
-                                   0., 0., 0.])
+        vx = self._desired_speed[0]
+        vy = self._desired_speed[1]
+        wz = self._desired_twisting_speed
+        pz = self._desired_com_height
+        self.set_point = np.array([0., 0., pz,  # p
+                                   0., 0., 0.,  # rpy
+                                   vx, vy, 0.,  # v
+                                   0., 0., wz])  # rpy_dot
 
         self.reset_controllers()
 
@@ -147,7 +154,7 @@ class WholeBodyController(object):
         print("Setting up the gait generator")
         init_gait_phase = self._robot.robot_params.init_gait_phase
         gait_params = self._robot.robot_params.gait_params
-        self._gait_generator = offset_gait_generator.OffsetGaitGenerator(
+        self._gait_scheduler = offset_gait_scheduler.OffsetGaitScheduler(
             robot=self._robot,
             init_phase=init_gait_phase,
             gait_parameters=gait_params
@@ -168,7 +175,7 @@ class WholeBodyController(object):
         self._swing_controller = \
             swing_leg_controller.RaibertSwingLegController(
                 robot=self._robot,
-                gait_generator=self._gait_generator,
+                gait_scheduler=self._gait_scheduler,
                 state_estimator=self._velocity_estimator,
                 desired_speed=self._desired_speed,
                 desired_twisting_speed=self._desired_twisting_speed,
@@ -182,7 +189,7 @@ class WholeBodyController(object):
             self._stance_controller = \
                 stance_leg_controller_quadprog.TorqueStanceLegController(
                     robot=self._robot,
-                    gait_generator=self._gait_generator,
+                    gait_scheduler=self._gait_scheduler,
                     state_estimator=self._velocity_estimator,
                     desired_speed=self._desired_speed,
                     desired_twisting_speed=self._desired_twisting_speed,
@@ -196,7 +203,7 @@ class WholeBodyController(object):
             self._stance_controller = \
                 stance_leg_controller_mpc.TorqueStanceLegController(
                     robot=self._robot,
-                    gait_generator=self._gait_generator,
+                    gait_scheduler=self._gait_scheduler,
                     state_estimator=self._velocity_estimator,
                     desired_speed=self._desired_speed,
                     desired_twisting_speed=self._desired_twisting_speed,
@@ -210,6 +217,10 @@ class WholeBodyController(object):
             raise RuntimeError("Unspecified objective function for stance controller")
 
         print("Whole body controller settle down!")
+
+    @property
+    def ddpg_agent(self):
+        return self._ddpg_agent
 
     @property
     def control_thread(self):
@@ -233,8 +244,8 @@ class WholeBodyController(object):
         return self._stance_controller
 
     @property
-    def gait_generator(self):
-        return self._gait_generator
+    def gait_scheduler(self):
+        return self._gait_scheduler
 
     @property
     def state_estimator(self):
@@ -254,7 +265,7 @@ class WholeBodyController(object):
         print("Reset robot whole body controller...")
         self._reset_time = self._clock()
         self._time_since_reset = 0
-        self._gait_generator.reset()
+        self._gait_scheduler.reset()
         self._velocity_estimator.reset(self._time_since_reset)
         self._swing_controller.reset(self._time_since_reset)
         self._stance_controller.reset(self._time_since_reset)
@@ -264,25 +275,86 @@ class WholeBodyController(object):
         self._time_since_reset = self._clock() - self._reset_time
         # print(f"self._time_since_reset: {self._time_since_reset}")
 
-        self._gait_generator.update()
-        self._velocity_estimator.update(self._gait_generator.desired_leg_states)
+        self._gait_scheduler.update()
+        self._velocity_estimator.update(self._gait_scheduler.desired_leg_states)
         self._swing_controller.update(self._time_since_reset)
-        # future_contact_estimate = self._gait_generator.get_estimated_contact_states(
+        # future_contact_estimate = self._gait_scheduler.get_estimated_contact_states(
         #     stance_leg_controller_mpc.PLANNING_HORIZON_STEPS,
         #     stance_leg_controller_mpc.PLANNING_TIMESTEP)
         # self._stance_controller.update(self._time_since_reset, future_contact_estimate)
         self._stance_controller.update(self._time_since_reset)
 
-    def get_action(self):
+    # def get_action(self):
+    #     """Returns the control outputs (e.g. positions/torques) for all motors."""
+    #     s = time.time()
+    #     swing_action = self._swing_controller.get_action()
+    #     e_swing = time.time()
+    #     stance_action, qp_sol = self._stance_controller.get_action()
+    #     e_stance = time.time()
+    #     print(f"swing_action time: {e_swing - s}")
+    #     print(f"stance_action time: {e_stance - e_swing}")
+    #     print(f"total get_action time: {e_stance - s}")
+    #
+    #     actions = []
+    #     for joint_id in range(self._robot.num_motors):
+    #         if joint_id in swing_action:
+    #             actions.append(swing_action[joint_id])
+    #         else:
+    #             assert joint_id in stance_action
+    #             actions.append(stance_action[joint_id])
+    #
+    #     vectorized_action = MotorCommand(
+    #         desired_position=[action.desired_position for action in actions],
+    #         kp=[action.kp for action in actions],
+    #         desired_velocity=[action.desired_velocity for action in actions],
+    #         kd=[action.kd for action in actions],
+    #         desired_torque=[
+    #             action.desired_torque for action in actions
+    #         ])
+    #
+    #     return vectorized_action, dict(qp_sol=qp_sol)
+
+    def get_action(self, phydrl=False, drl_action=None):
         """Returns the control outputs (e.g. positions/torques) for all motors."""
+
+        # Get PhyDRL action (Inference)
+        if phydrl is True and drl_action is None:
+            # print(f"Getting action from PhyDRL model {self._ddpg_agent.params.model_path}")
+
+            # State vector
+            state_vector = self.state_vector
+
+            # Tracking error
+            tracking_error = state_vector - self.set_point
+            print(f"states_vector: {state_vector}")
+            # print(f"set_points: {set_points}")
+            print(f"tracking_error: {tracking_error}")
+
+            # Observation
+            observation = tracking_error
+
+            s_drl = time.time()
+            drl_action = self._ddpg_agent.get_action(observation, mode='test')
+            # drl_action_magnitude = np.array([2, 2, 3, 4, 4, 2])
+            drl_action_magnitude = np.array([2, 2, 3, 4, 4, 2])
+            drl_action *= drl_action_magnitude
+
+            e_drl = time.time()
+            print(f"get drl action time: {e_drl - s_drl}")
+
+        # Action delay
+        if self._ddpg_agent is not None and self._ddpg_agent.params.add_action_delay:
+            print("add action delay...")
+            drl_action = self._ddpg_agent.get_delayed_action(drl_action)
+
         s = time.time()
         swing_action = self._swing_controller.get_action()
         e_swing = time.time()
-        stance_action, qp_sol = self._stance_controller.get_action()
+        stance_action, qp_sol = self._stance_controller.get_action(drl_action=drl_action)
         e_stance = time.time()
-        print(f"swing_action time: {e_swing - s}")
-        print(f"stance_action time: {e_stance - e_swing}")
-        print(f"total get_action time: {e_stance - s}")
+        # print(f"swing_action time: {e_swing - s}")
+        # print(f"stance_action time: {e_stance - e_swing}")
+        # print(f"total get_action time: {e_stance - s}")
 
         actions = []
         for joint_id in range(self._robot.num_motors):
@@ -303,103 +375,99 @@ class WholeBodyController(object):
 
         return vectorized_action, dict(qp_sol=qp_sol)
 
-    def get_drl_action(self, current_step, states_vector, drl_action=None):
-        """Returns the control outputs (e.g. positions/torques) for all motors."""
-        s = time.time()
-        swing_action = self.swing_leg_controller.get_action()
-        e_swing = time.time()
-        # stance_action, qp_sol, diff_q, diff_dq = self._stance_leg_controller.get_action_our(current_step, states_vector, drl_action)
-        # stance_action, qp_sol, diff_q, diff_dq = self._stance_leg_controller.get_action(drl_action)
-        stance_action, qp_sol, diff_q, diff_dq = self.stance_leg_controller.get_final_action(current_step,
-                                                                                             states_vector, drl_action)
-        e_stance = time.time()
-        print(f"swing_action time: {e_swing - s}")
-        print(f"stance_action time: {e_stance - e_swing}")
-        print(f"total get_action time: {e_stance - s}")
-
-        # print(f"swing_action: {swing_action}")
-        # print(f"stance_action: {stance_action}")
-        actions = []
-        for joint_id in range(self._robot.num_motors):
-            if joint_id in swing_action:
-                actions.append(swing_action[joint_id])
-            else:
-                assert joint_id in stance_action
-                actions.append(stance_action[joint_id])
-
-        vectorized_action = MotorCommand(
-            desired_position=[action.desired_position for action in actions],
-            kp=[action.kp for action in actions],
-            desired_velocity=[action.desired_velocity for action in actions],
-            kd=[action.kd for action in actions],
-            desired_torque=[
-                action.desired_torque for action in actions
-            ])
-
-        return vectorized_action, dict(qp_sol=qp_sol), diff_q, diff_dq
-
-    def get_phydrl_action(self):
-        print("Entering get_phydrl_action!")
-        # observations = copy.deepcopy(self.a1.observation)
-
-        import time
-        s = time.time()
-
-        states = dict(timestamp=self._robot.time_since_reset,
-                      base_rpy=self._robot.base_orientation_rpy,
-                      motor_angles=self._robot.motor_angles,
-                      base_linear_vel=self._robot.base_linear_velocity,
-                      base_vels_body_frame=self.state_estimator.com_velocity_in_body_frame,
-                      # base_rpy_rate=self.robot.GetBaseRollPitchYawRate(), todo: rpy rate or angular vel ???
-                      base_rpy_rate=self._robot.base_angular_velocity,
-                      motor_vels=self._robot.motor_velocities,
-                      contacts=self._robot.foot_contacts)
-
-        angle = states['base_rpy']
-
-        com_position_xyz = self.state_estimator.estimate_robot_x_y_z()
-
-        base_rpy_rate = states['base_rpy_rate']
-        com_velocity = states['base_vels_body_frame']
-
-        states_vector = np.hstack((com_position_xyz, angle, com_velocity, base_rpy_rate))
-        set_points = self.set_point
-
-        # Tracking error
-        tracking_error = states_vector - set_points
-        print(f"states_vector: {states_vector}")
-        print(f"set_points: {set_points}")
-        print(f"tracking_error: {tracking_error}")
-
-        e1 = time.time()
-        print(f"part 1 taking time: {e1 - s}")
-
-        observations = copy.deepcopy(tracking_error)
-
-        e2 = time.time()
-        print(f"part 2 taking time: {e2 - e1}")
-
-        drl_action = self._ddpg_agent.get_action(observations, mode='test')
-
-
-
-        print(f"drl_action: {drl_action}")
-        e3 = time.time()
-        print(f"part 3 taking time: {e3 - e2}")
-
-        print(f"Get PhyDRL action time: {e3 - s}")
-
-        # _, terminal, abort = self.a1.step(drl_action, action_mode='residual')
-
-        phydrl_action, qp_sol, diff_q, diff_dq = self.get_drl_action('self.current_step',
-                                                                     states_vector, drl_action)
-
-        e4 = time.time()
-        print(f"part 4 taking time: {e4 - e3}")
-
-
-
-        return phydrl_action, dict(qp_sol=qp_sol)
+    # def get_drl_action(self, current_step, states_vector, drl_action=None):
+    #     """Returns the control outputs (e.g. positions/torques) for all motors."""
+    #     s = time.time()
+    #     swing_action = self.swing_leg_controller.get_action()
+    #     e_swing = time.time()
+    #     # stance_action, qp_sol, diff_q, diff_dq = self._stance_leg_controller.get_action_our(current_step, states_vector, drl_action)
+    #     # stance_action, qp_sol, diff_q, diff_dq = self._stance_leg_controller.get_action(drl_action)
+    #     stance_action, qp_sol, diff_q, diff_dq = self.stance_leg_controller.get_final_action(current_step,
+    #                                                                                          states_vector, drl_action)
+    #     e_stance = time.time()
+    #     print(f"swing_action time: {e_swing - s}")
+    #     print(f"stance_action time: {e_stance - e_swing}")
+    #     print(f"total get_action time: {e_stance - s}")
+    #
+    #     # print(f"swing_action: {swing_action}")
+    #     # print(f"stance_action: {stance_action}")
+    #     actions = []
+    #     for joint_id in range(self._robot.num_motors):
+    #         if joint_id in swing_action:
+    #             actions.append(swing_action[joint_id])
+    #         else:
+    #             assert joint_id in stance_action
+    #             actions.append(stance_action[joint_id])
+    #
+    #     vectorized_action = MotorCommand(
+    #         desired_position=[action.desired_position for action in actions],
+    #         kp=[action.kp for action in actions],
+    #         desired_velocity=[action.desired_velocity for action in actions],
+    #         kd=[action.kd for action in actions],
+    #         desired_torque=[
+    #             action.desired_torque for action in actions
+    #         ])
+    #
+    #     return vectorized_action, dict(qp_sol=qp_sol), diff_q, diff_dq
+    #
+    # def get_phydrl_action(self):
+    #     print("Entering get_phydrl_action!")
+    #     # observations = copy.deepcopy(self.a1.observation)
+    #
+    #     import time
+    #     s = time.time()
+    #
+    #     states = dict(timestamp=self._robot.time_since_reset,
+    #                   base_rpy=self._robot.base_orientation_rpy,
+    #                   motor_angles=self._robot.motor_angles,
+    #                   base_linear_vel=self._robot.base_linear_velocity,
+    #                   base_vels_body_frame=self.state_estimator.com_velocity_in_body_frame,
+    #                   # base_rpy_rate=self.robot.GetBaseRollPitchYawRate(), todo: rpy rate or angular vel ???
+    #                   base_rpy_rate=self._robot.base_angular_velocity,
+    #                   motor_vels=self._robot.motor_velocities,
+    #                   contacts=self._robot.foot_contacts)
+    #
+    #     angle = states['base_rpy']
+    #
+    #     com_position_xyz = self.state_estimator.estimate_robot_x_y_z()
+    #
+    #     base_rpy_rate = states['base_rpy_rate']
+    #     com_velocity = states['base_vels_body_frame']
+    #
+    #     states_vector = np.hstack((com_position_xyz, angle, com_velocity, base_rpy_rate))
+    #     set_points = self.set_point
+    #
+    #     # Tracking error
+    #     tracking_error = states_vector - set_points
+    #     print(f"states_vector: {states_vector}")
+    #     print(f"set_points: {set_points}")
+    #     print(f"tracking_error: {tracking_error}")
+    #
+    #     e1 = time.time()
+    #     print(f"part 1 taking time: {e1 - s}")
+    #
+    #     observations = copy.deepcopy(tracking_error)
+    #
+    #     e2 = time.time()
+    #     print(f"part 2 taking time: {e2 - e1}")
+    #
+    #     drl_action = self._ddpg_agent.get_action(observations, mode='test')
+    #
+    #     print(f"drl_action: {drl_action}")
+    #     e3 = time.time()
+    #     print(f"part 3 taking time: {e3 - e2}")
+    #
+    #     print(f"Get PhyDRL action time: {e3 - s}")
+    #
+    #     # _, terminal, abort = self.a1.step(drl_action, action_mode='residual')
+    #
+    #     phydrl_action, qp_sol, diff_q, diff_dq = self.get_drl_action('self.current_step',
+    #                                                                  states_vector, drl_action)
+    #
+    #     e4 = time.time()
+    #     print(f"part 4 taking time: {e4 - e3}")
+    #
+    #     return phydrl_action, dict(qp_sol=qp_sol)
 
     def _get_stand_action(self):
         return MotorCommand(
@@ -433,35 +501,40 @@ class WholeBodyController(object):
 
     def _update_logging(self, action, qp_sol):
         frame = dict(
+            timestamp=self._time_since_reset,
+            tracking_error=self._stance_controller.tracking_error,
             desired_speed=(self._swing_controller.desired_speed,
                            self._swing_controller.desired_twisting_speed),
-            timestamp=self._time_since_reset,
+            desired_com_height=self._desired_com_height,
+            # step_counter=self._robot.step_counter,
+            # action_counter=self._robot.action_counter,
+            base_position=self._robot.base_position,
             base_rpy=self._robot.base_orientation_rpy,
-            motor_angles=self._robot.motor_angles,
             base_vel=self._robot.motor_velocities,
-            base_vels_body_frame=self._velocity_estimator.com_velocity_in_body_frame,
-            base_angular_velocity_in_body_frame=self._robot.
-            base_angular_velocity_in_body_frame,
+            base_linear_vel_in_body_frame=self._velocity_estimator.com_velocity_in_body_frame,
+            base_angular_vel_in_body_frame=self._robot.base_angular_velocity_in_body_frame,
+            motor_angles=self._robot.motor_angles,
             motor_vels=self._robot.motor_velocities,
             motor_torques=self._robot.motor_torques,
-            contacts=self._robot.foot_contacts,
-            desired_grf=qp_sol,
-            robot_action=action,
-            gait_generator_phase=self._gait_generator.current_phase.copy(),
-            gait_generator_state=self._gait_generator.leg_states,
-            ground_orientation=self._velocity_estimator.
-            ground_orientation_in_world_frame,
+            foot_contacts=self._robot.foot_contacts,
+            swing_action=self._swing_controller.swing_action,
+            stance_action=self._stance_controller.stance_action,
+            stance_ddq=self._stance_controller.stance_ddq,
+            stance_ddq_limit=self._stance_controller.stance_ddq_limit,
+            desired_ground_reaction_forces=self._stance_controller.ground_reaction_forces,
+            gait_scheduler_phase=self._gait_scheduler.current_phase.copy(),
+            leg_states=self._gait_scheduler.leg_states,
+            ground_orientation=self._velocity_estimator.ground_orientation_in_world_frame,
         )
+        # print(f"ground_reaction_forces: {self._stance_controller.ground_reaction_forces}")
         self._logs.append(frame)
 
     def _flush_logging(self):
         if not os.path.exists(self._logdir):
             os.makedirs(self._logdir)
-        filename = 'log_{}.pkl'.format(
-            datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))
+        filename = 'log_{}.pkl'.format(datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))
         pickle.dump(self._logs, open(os.path.join(self._logdir, filename), 'wb'))
-        logging.info("Data logged to: {}".format(
-            os.path.join(self._logdir, filename)))
+        logging.info("Data logged to: {}".format(os.path.join(self._logdir, filename)))
 
     def _handle_gait_switch(self):
         print("Entering _handle_gait_switch")
@@ -480,7 +553,7 @@ class WholeBodyController(object):
             self._gait_config = flytrot.get_config()
 
         self._gait = self._desired_gait
-        self._gait_generator.gait_params = self._gait_config.gait_parameters
+        self._gait_scheduler.gait_params = self._gait_config.gait_parameters
         self._swing_controller.foot_lift_height = self._gait_config.foot_clearance_max
         self._swing_controller.foot_landing_clearance = \
             self._gait_config.foot_clearance_land
@@ -510,20 +583,34 @@ class WholeBodyController(object):
                 # time.sleep(0.001)
 
             elif self._mode == ControllerMode.WALK:
-                s_action = time.time()
-                if self._ddpg_agent is not None:
-                    action, qp_sol = self.get_phydrl_action()
-                else:
-                    action, qp_sol = self.get_action()
-                e_action = time.time()
 
+                # Simplex Enable
+                if self._ha_teacher.teacher_enable:
+                    curr_state = self.stance_leg_controller.tracking_error  # Current state
+                    action, qp_sol = self._ha_teacher.get_hac_action(states=curr_state)
+
+                # Without Simplex
+                else:
+                    s_action = time.time()
+                    if self._ddpg_agent is not None:
+                        action, qp_sol = self.get_action(phydrl=True)
+                        print("get PhyDRL action")
+                    else:
+                        action, qp_sol = self.get_action(phydrl=False)
+                        print("get mpc action")
+                    e_action = time.time()
+                    print(f"get action duration: {e_action - s_action}")
+
+                # print(f"action is: {action}")
                 # time.sleep(0.001)
                 ss = time.time()
                 self._robot.step(action)
                 ee = time.time()
 
+                s_log = time.time()
                 self._update_logging(action, qp_sol)
-                print(f"get action duration: {e_action - s_action}")
+                e_log = time.time()
+                print(f"log update time: {e_log - s_log}")
                 print(f"step duration: {ee - ss}")
 
             else:
@@ -613,3 +700,15 @@ class WholeBodyController(object):
 
     def dump_logs(self):
         self._flush_logging()
+
+    @property
+    def state_vector(self):
+        com_position = self.state_estimator.com_position_in_ground_frame
+        com_velocity = self.state_estimator.com_velocity_in_body_frame
+        com_roll_pitch_yaw = np.array(
+            self._robot.pybullet_client.getEulerFromQuaternion(
+                self.state_estimator.com_orientation_quaternion_in_ground_frame))
+        com_roll_pitch_yaw_rate = self._robot.base_angular_velocity_in_body_frame
+
+        state_vector = np.hstack((com_position, com_roll_pitch_yaw, com_velocity, com_roll_pitch_yaw_rate))
+        return state_vector

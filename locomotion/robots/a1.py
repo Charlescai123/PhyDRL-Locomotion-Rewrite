@@ -19,7 +19,7 @@ from config.locomotion.controllers.stance_params import StanceControllerParams
 from config.locomotion.robots.pose import Pose
 
 from locomotion.mpc_controller import swing_leg_controller
-from locomotion.gait_generator import offset_gait_generator
+from locomotion.gait_scheduler import offset_gait_scheduler
 from locomotion.state_estimator import com_velocity_estimator
 from config.phydrl.ddpg_params import DDPGParams
 from config.phydrl.taylor_params import TaylorParams
@@ -33,10 +33,12 @@ class A1(QuadrupedRobot):
             self,
             pybullet_client: Any = None,
             ddpg_agent: DDPGAgent = None,
+            mat_engine: Any = None,
             a1_params: A1Params = None,
             motor_params: MotorGroupParams = None,
             swing_params: SwingControllerParams = None,
             stance_params: StanceControllerParams = None,
+            logdir='./logs'
     ) -> None:
         """Constructs an A1 robot and resets it to the initial states.
         Initializes a tuple with a single MotorGroup containing 12 MotorModels.
@@ -89,6 +91,7 @@ class A1(QuadrupedRobot):
         self._controller = wbc_controller.WholeBodyController(
             robot=self,
             ddpg_agent=ddpg_agent,
+            mat_engine=mat_engine,
             desired_speed=(self._desired_vx, self._desired_vy),
             desired_twisting_speed=self._desired_wz,
             desired_com_height=self._mpc_body_height,
@@ -96,6 +99,7 @@ class A1(QuadrupedRobot):
             mpc_body_inertia=self._mpc_body_inertia,
             swing_params=self._swing_params,
             stance_params=self._stance_params,
+            logdir=logdir
         )
 
         # Reset robot to init pose

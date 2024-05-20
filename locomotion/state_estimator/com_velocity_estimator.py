@@ -4,7 +4,7 @@ import pybullet as p
 from typing import Any, Sequence
 import time
 
-from locomotion.gait_generator import gait_generator as gait_generator_lib
+from locomotion.gait_scheduler import gait_scheduler as gait_generator_lib
 from locomotion.state_estimator import moving_window_filter
 
 from locomotion.robots import a1_robot
@@ -228,6 +228,6 @@ class COMVelocityEstimator(object):
         # print(f"y: {y}")
         # print(f"z: {z}")
         # print(f"contacts: {contacts}")
-        # print(f"self._robot.gait_generator.desired_leg_states: {self._robot.gait_generator.desired_leg_states}")
+        # print(f"self._robot.gait_scheduler.desired_leg_states: {self._robot.gait_scheduler.desired_leg_states}")
 
         return np.sum(x) / np.sum(contacts), np.sum(y) / np.sum(contacts), np.sum(z) / np.sum(contacts)

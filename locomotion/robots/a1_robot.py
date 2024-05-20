@@ -28,10 +28,12 @@ class A1Robot(a1.A1):
             self,
             pybullet_client: Any = None,
             ddpg_agent: DDPGAgent = None,
+            mat_engine: Any = None,
             a1_robot_params: A1RobotParams = None,
             motor_params: MotorGroupParams = None,
             swing_params: SwingControllerParams = None,
             stance_params: StanceControllerParams = None,
+            logdir='./logs'
     ) -> None:
 
         self._params = a1_robot_params
@@ -47,10 +49,12 @@ class A1Robot(a1.A1):
         super(A1Robot, self).__init__(
             pybullet_client=pybullet_client,
             ddpg_agent=ddpg_agent,
+            mat_engine=mat_engine,
             a1_params=a1_robot_params,
             motor_params=motor_params,
             swing_params=swing_params,
-            stance_params=stance_params
+            stance_params=stance_params,
+            logdir=logdir
         )
 
     def _receive_observation(self) -> None:

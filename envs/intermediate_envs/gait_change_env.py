@@ -14,7 +14,7 @@ from locomotion.robots import MotorCommand
 from locomotion.estimators import com_velocity_estimator
 from locomotion.mpc_controller import swing_leg_controller as swing_controller
 from locomotion.mpc_controller import stance_leg_controller_mpc as stance_controller_mpc
-from locomotion.gait_generator import offset_gait_generator
+from locomotion.gait_scheduler import offset_gait_scheduler
 
 
 def get_gamepad_desired_speed_fn(gamepad):

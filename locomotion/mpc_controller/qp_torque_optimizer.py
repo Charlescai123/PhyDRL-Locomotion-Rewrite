@@ -107,12 +107,12 @@ class QPTorqueOptimizer:
         linear_term = 1 * (g + desired_acc).T.dot(Q).dot(mass_matrix)
 
         e3 = time.time()
-        print(f"compute_objective time 1: {e1 - s}")
-        print(f"compute_objective time 11: {e11 - s}")
-        print(f"compute_objective time 12: {e12 - e11}")
-        print(f"compute_objective time 13: {e13 - e12}")
-        print(f"compute_objective time 2: {e2 - e1}")
-        print(f"compute_objective time 3: {e3 - e2}")
+        # print(f"compute_objective time 1: {e1 - s}")
+        # print(f"compute_objective time 11: {e11 - s}")
+        # print(f"compute_objective time 12: {e12 - e11}")
+        # print(f"compute_objective time 13: {e13 - e12}")
+        # print(f"compute_objective time 2: {e2 - e1}")
+        # print(f"compute_objective time 3: {e3 - e2}")
 
         # g = np.array([0., 0., 9.8, 0., 0., 0.])
         # Q = np.diag(acc_weights)

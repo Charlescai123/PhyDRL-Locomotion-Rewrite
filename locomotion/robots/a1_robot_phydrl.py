@@ -8,7 +8,7 @@ import json
 import time
 from locomotion import wbc_controller
 from locomotion.mpc_controller import swing_leg_controller
-from locomotion.gait_generator import offset_gait_generator
+from locomotion.gait_scheduler import offset_gait_scheduler
 from locomotion.state_estimator import com_velocity_estimator
 from locomotion.robots import kinematics, a1
 from locomotion.robots.motors import MotorControlMode

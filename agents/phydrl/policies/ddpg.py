@@ -1,7 +1,9 @@
 import math
+import copy
 import os
 import numpy as np
 import tensorflow as tf
+from collections import deque
 from config.phydrl.ddpg_params import DDPGParams
 from config.phydrl.taylor_params import TaylorParams
 from agents.phydrl.utils.utils import OrnsteinUhlenbeckActionNoise
@@ -27,6 +29,9 @@ class DDPGAgent:
         self.taylor_params = taylor_params
 
         self.exploration_steps = 0
+
+        # Action Buffer
+        self.action_buffer = deque([np.zeros(6), np.zeros(6), np.zeros(6)])
 
         if model_path is not None:
             if self.actor is None:
@@ -207,3 +212,15 @@ class DDPGAgent:
     def agent_warmup(self):
         observations = np.array([0, 0, 0, 0., 0., 0., 0, 0., 0., 0., 0., 0.])
         self.get_action(observations, mode='test')
+
+    def get_delayed_action(self, drl_action):
+        # print(f"add action delay...")
+        self.action_buffer.append(copy.deepcopy(drl_action))
+        # self.action_buffer = copy.deepcopy(self.action_buffer[1:])
+        self.action_buffer.popleft()
+        idx = np.random.choice(len(self.action_buffer))
+        delayed_drl_action = self.action_buffer[idx]
+        return delayed_drl_action
+        # print(self.action_buffer)
+        # print(drl_action)
+        # print("..............")

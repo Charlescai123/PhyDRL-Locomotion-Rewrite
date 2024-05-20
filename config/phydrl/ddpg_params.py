@@ -20,3 +20,4 @@ class DDPGParams:
         self.use_taylor_nn = False
         self.taylor_editing = False
         self.replay_buffer_size = 51000
+        self.add_action_delay = False

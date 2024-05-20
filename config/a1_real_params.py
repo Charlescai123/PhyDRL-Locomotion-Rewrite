@@ -66,8 +66,22 @@ class A1RealParams:
         self.stance_params.objective_function = 'acceleration'  # use acceleration
 
         # Original
-        self.stance_params.qp_kp = np.array((0., 0., 85, 76, 76, 100))
-        self.stance_params.qp_kd = np.array((24.,20., 20., 24., 24., 27.))
+        # self.stance_params.qp_kp = np.diag((0., 0., 85, 76, 76, 100))
+        # self.stance_params.qp_kd = np.diag((24., 20., 20., 24., 24., 27.))
+        # self.stance_params.qp_kp = np.diag((0., 0., 100., 100., 100., 0.))
+        # self.stance_params.qp_kd = np.diag((40., 30., 10., 10., 10., 30.))
+        self.stance_params.qp_kp = np.array([[0, 0, 0, 0, 0, 0],
+                                             [0, 0, 0, 0, 0, 0],
+                                             [0, 0, 128, 0, 0, 0],
+                                             [0, 0, 0, 83, -25, -2],
+                                             [0, 0, 0, -33, 80, 2],
+                                             [0, 0, 0, 1, 0, 80]])
+        self.stance_params.qp_kd = np.array([[39, 0, 0, 0, 0, 0],
+                                             [0, 35, 0, 0, 0, 0],
+                                             [0, 0, 35, 0, 0, 0],
+                                             [0, 0, 0, 37, -1, -9],
+                                             [0, 0, 0, -1, 37, 9],
+                                             [0, 0, 0, 0, 0, 40]])
 
         # Phydrl
         # self.stance_params.qp_kp = np.array((0.1, 0.1, 100., 100., 100., 100))
